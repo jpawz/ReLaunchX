@@ -136,6 +136,7 @@ public class ReLaunch extends Activity {
 	String currentRoot = "/sdcard";
 	Integer currentPosition = -1;
 	List<FileDetails> itemsArray;
+	List<Integer> itemsHeights = new ArrayList<>();
 	Stack<Integer> positions = new Stack<Integer>();
 	BaseAdapter adapter;
 	SharedPreferences prefs;
@@ -635,6 +636,12 @@ public class ReLaunch extends Activity {
 				}
 				if (recalc_height > 0) {
 					v.setMinimumHeight(recalc_height + after_row_space);
+				}
+			}
+			if (!prefs.getBoolean("doNotHyph", true)) {
+				int height = v.getHeight();
+				if (height > 0) {
+					itemsHeights.set(position, height);
 				}
 			}
 			return v;
@@ -1178,6 +1185,7 @@ public class ReLaunch extends Activity {
 		setSortMode(prefs.getInt("sortKey", 0), prefs.getInt("sortOrder", 0));
 		fileItemsArray = sortFiles(fileItemsArray, sortKey, sortMode);
 		itemsArray.addAll(fileItemsArray);
+		itemsHeights = new ArrayList<>(Collections.nCopies(itemsArray.size(), 0));
 		setUpButton(up, upDir, currentRoot);
 		final GridView gv = (GridView) findViewById(useDirViewer ? R.id.results_list
 				: R.id.gl_list);
@@ -1566,14 +1574,16 @@ public class ReLaunch extends Activity {
 							200, 200, 0);
 					gv.dispatchTouchEvent(ev);
 				} else { // other devices
+					if (!prefs.getBoolean("doNotHyph", true)) {
+						gv.setSelection(getFirstItemToScrollUp(gv));
+					}
 					int first = gv.getFirstVisiblePosition();
-					int visible = gv.getLastVisiblePosition()
-							- gv.getFirstVisiblePosition() + 1;
+					int visible = gv.getLastVisiblePosition() - first + 1;
 					int total = itemsArray.size();
 					first -= visible;
 					if (first < 0)
 						first = 0;
-					gv.setSelection(first);
+
 					// some hack workaround against not scrolling in some cases
 					if (total > 0) {
 						gv.requestFocusFromTouch();
@@ -1585,37 +1595,13 @@ public class ReLaunch extends Activity {
 
 			@Override
 			public boolean onDoubleTap(MotionEvent e) {
-				if (prefs.getBoolean("disableScrollJump", true) == false) {
-					int first = gv.getFirstVisiblePosition();
-					int total = itemsArray.size();
-					first -= (total * app.scrollStep) / 100;
-					if (first < 0)
-						first = 0;
-					gv.setSelection(first);
-					// some hack workaround against not scrolling in some cases
-					if (total > 0) {
-						gv.requestFocusFromTouch();
-						gv.setSelection(first);
-					}
-				}
 				return true;
 			}
 
 			@Override
 			public void onLongPress(MotionEvent e) {
 				if (upScroll.hasWindowFocus()) {
-					if (prefs.getBoolean("disableScrollJump", true) == false) {
-						int first = gv.getFirstVisiblePosition();
-						int total = itemsArray.size();
-						first = 0;
-						gv.setSelection(first);
-						// some hack workaround against not scrolling in some
-						// cases
-						if (total > 0) {
-							gv.requestFocusFromTouch();
-							gv.setSelection(first);
-						}
-					}
+					gv.setSelection(0);
 				}
 			}
 		}
@@ -1629,33 +1615,6 @@ public class ReLaunch extends Activity {
 			}
 		});
 
-		class RepeatedDownScroll {
-			public void doIt(int first, int target, int shift) {
-				final GridView gv = (GridView) findViewById(R.id.gl_list);
-				int total = gv.getCount();
-				int last = gv.getLastVisiblePosition();
-				if (total == last + 1)
-					return;
-				final int ftarget = target + shift;
-				gv.clearFocus();
-				gv.post(new Runnable() {
-					public void run() {
-						gv.setSelection(ftarget);
-					}
-				});
-				final int ffirst = first;
-				final int fshift = shift;
-				gv.postDelayed(new Runnable() {
-					public void run() {
-						int nfirst = gv.getFirstVisiblePosition();
-						if (nfirst == ffirst) {
-							RepeatedDownScroll ds = new RepeatedDownScroll();
-							ds.doIt(ffirst, ftarget, fshift + 1);
-						}
-					}
-				}, 150);
-			}
-		}
 
 		final Button downScroll = (Button) findViewById(R.id.downscroll_btn);
 		if (prefs.getBoolean("disableScrollJump", true) == false) {
@@ -1683,53 +1642,24 @@ public class ReLaunch extends Activity {
 							200, 100, 0);
 					gv.dispatchTouchEvent(ev);
 				} else { // other devices
-					int first = gv.getFirstVisiblePosition();
-					int total = itemsArray.size();
-					int last = gv.getLastVisiblePosition();
-					if (total == last + 1)
-						return true;
-					int target = last + 1;
-					if (target > (total - 1))
-						target = total - 1;
-					RepeatedDownScroll ds = new RepeatedDownScroll();
-					ds.doIt(first, target, 0);
+					if (!prefs.getBoolean("doNotHyph", true)) {
+						setItemsHeights(gv);
+					}
+					gv.setSelection(gv.getLastVisiblePosition());
 				}
 				return true;
 			}
 
 			@Override
 			public boolean onDoubleTap(MotionEvent e) {
-				if (prefs.getBoolean("disableScrollJump", true) == false) {
-					int first = gv.getFirstVisiblePosition();
-					int total = itemsArray.size();
-					int last = gv.getLastVisiblePosition();
-					if (total == last + 1)
-						return true;
-					int target = first + (total * app.scrollStep) / 100;
-					if (target <= last)
-						target = last + 1; // Special for NOOK, otherwise it
-											// won't redraw the listview
-					if (target > (total - 1))
-						target = total - 1;
-					RepeatedDownScroll ds = new RepeatedDownScroll();
-					ds.doIt(first, target, 0);
-				}
 				return true;
 			}
 
 			@Override
 			public void onLongPress(MotionEvent e) {
 				if (downScroll.hasWindowFocus()) {
-					if (prefs.getBoolean("disableScrollJump", true) == false) {
-						int first = gv.getFirstVisiblePosition();
-						int total = itemsArray.size();
-						int last = gv.getLastVisiblePosition();
-						if (total == last + 1)
-							return;
-						int target = total - 1;
-						RepeatedDownScroll ds = new RepeatedDownScroll();
-						ds.doIt(first, target, 0);
-					}
+					int target = itemsArray.size() - 1;
+					gv.setSelection(target);
 				}
 			}
 		}
@@ -1745,6 +1675,34 @@ public class ReLaunch extends Activity {
 
 		refreshBottomInfo();
 	}
+
+	private int getFirstItemToScrollUp(GridView gv) {
+		int viewHeight = gv.getHeight();
+		int targetItem = gv.getFirstVisiblePosition();
+			while (targetItem >= 0 && viewHeight > itemsHeights.get(targetItem)) {
+				if(currentColsNum > 1)
+					viewHeight -= Collections.max(
+							itemsHeights.subList(targetItem, targetItem + currentColsNum));
+				else
+					viewHeight -= itemsHeights.get(targetItem);
+				targetItem -= currentColsNum;
+			}
+		return targetItem + currentColsNum;
+	}
+
+	private void setItemsHeights(GridView gv) {
+		int firstVisible = gv.getFirstVisiblePosition();
+		int lastVisible = gv.getLastVisiblePosition();
+		int visibleItems = lastVisible - firstVisible;
+		for(int i = 0; i <= visibleItems; i++) {
+            View item = gv.getChildAt(firstVisible);
+            if(item != null) {
+                itemsHeights.set(firstVisible + i,item.getHeight());
+            }
+        }
+	}
+
+
 
 	private HashMap<String, Drawable> createIconsList(PackageManager pm) {
 		Drawable d = null;
